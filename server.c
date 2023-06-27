@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <ctype.h>
 
 #define MAX_CLIENTS 10
 #define MAX_ROOMS 5
@@ -50,6 +51,29 @@ Room* find_room_by_id(int room_id) {
         }
     }
     return NULL;
+}
+
+void strtrim(char* str) {
+    int start = 0, end = strlen(str) - 1;
+
+    while (isspace((unsigned char)str[start])) {
+        start++;
+    }
+
+    if (start == strlen(str)) {
+        str[0] = '\0';
+        return;
+    }
+
+    while (isspace((unsigned char)str[end])) {
+        end--;
+    }
+
+    int i, j;
+    for (i = start, j = 0; i <= end; i++, j++) {
+        str[j] = str[i];
+    }
+    str[j] = '\0';
 }
 
 Room* create_room(int room_id, const char* room_name, int limit) {
@@ -129,17 +153,18 @@ void handle_client_message(Client* client, const char* message) {
     } else {
         if (current_room != NULL) {
             for (int i = 0; i < current_room->num_clients; i++) {
-                if (current_room->clients[i] != client) {
-                    char formatted_message[1100];
-                    sprintf(formatted_message, "[%s] => %s", client->name, message);
-                    send_message(current_room->clients[i]->socket, formatted_message);
-                }
+                char formatted_message[1100];
+                sprintf(formatted_message, "[%s] => %s", client->name, message);
+
+                // Envie a mensagem formatada em uma única linha para todos os clientes na sala
+                send_message(current_room->clients[i]->socket, formatted_message);
             }
         } else {
             send_message(client->socket, "Você não está em nenhuma sala.\n");
         }
     }
 }
+
 
 void handle_new_connection(int server_socket) {
     int client_socket;
@@ -162,6 +187,9 @@ void handle_new_connection(int server_socket) {
     send_message(client->socket, "Insira seu nome:\n");
     read(client->socket, client->name, MAX_NAME_LENGTH);
 
+    // Remova o espaço em branco no final do nome
+    strtrim(client->name);
+
     send_message(client->socket, "Insira o ID da sala (-1 para criar uma nova):\n");
     char room_id_str[10];
     read(client->socket, room_id_str, sizeof(room_id_str));
@@ -173,11 +201,14 @@ void handle_new_connection(int server_socket) {
             room->clients[room->num_clients++] = client;
             char enter_message[100];
             sprintf(enter_message, "[%s] entrou na sala.\n", client->name);
+
+            // Envie a mensagem de entrada na sala formatada em uma única linha para todos os clientes na sala
             for (int i = 0; i < room->num_clients; i++) {
                 if (room->clients[i] != client) {
                     send_message(room->clients[i]->socket, enter_message);
                 }
             }
+
             send_message(client->socket, "Você entrou na sala existente.\n");
         } else {
             send_message(client->socket, "A sala está cheia.\n");

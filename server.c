@@ -131,13 +131,12 @@ void handle_client_message(Client* client, const char* message) {
         if (current_room != NULL) {
             remove_client_from_room(client, current_room);
             send_message(client->socket, "Você saiu da sala.\n");
+            current_room = NULL;
         } else {
             send_message(client->socket, "Você não está em nenhuma sala.\n");
         }
     } else if (strncmp(message, "/trocar_sala", 12) == 0) {
-        if (current_room != NULL) {
-            send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
-        } else {
+        if (current_room == NULL) {
             int room_id = atoi(message + 13);
             if (room_id >= 0) {
                 Room* new_room = find_room_by_id(room_id);
@@ -157,11 +156,11 @@ void handle_client_message(Client* client, const char* message) {
             } else {
                 send_message(client->socket, "ID da sala inválido. Digite um ID válido.\n");
             }
+        } else {
+            send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
         }
     } else if (strncmp(message, "/criar", 6) == 0) {
-        if (current_room != NULL) {
-            send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
-        } else {
+        if (current_room == NULL) {
             send_message(client->socket, "Digite o nome da nova sala ou (/cancelar para cancelar):\n");
             char room_name[MAX_NAME_LENGTH];
             read(client->socket, room_name, sizeof(room_name));
@@ -187,6 +186,8 @@ void handle_client_message(Client* client, const char* message) {
                     send_message(client->socket, "Não foi possível criar a sala.\n");
                 }
             }
+        } else {
+            send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
         }
     } else {
         if (current_room != NULL) {
@@ -203,8 +204,6 @@ void handle_client_message(Client* client, const char* message) {
         }
     }
 }
-
-
 
 void handle_new_connection(int server_socket) {
     int client_socket;
@@ -263,16 +262,37 @@ void handle_new_connection(int server_socket) {
     } else {
         Room* room = find_room_by_name(room_name);
         while (room == NULL) {
-            send_message(client->socket, "Sala não encontrada. Digite o nome de uma sala existente ou (/cancelar para cancelar):\n");
+            send_message(client->socket, "Sala não encontrada. Digite o nome de uma sala existente ou (/criar para criar uma nova sala):\n");
             read(client->socket, room_name, sizeof(room_name));
             strtrim(room_name);
-            if (strncmp(room_name, "/cancelar", 9) == 0) {
-                send_message(client->socket, "Operação cancelada.\n");
-                close(client->socket);
-                free(client);
-                return;
+            if (strncmp(room_name, "/criar", 6) == 0) {
+                send_message(client->socket, "Digite o nome da nova sala:\n");
+                read(client->socket, room_name, sizeof(room_name));
+                strtrim(room_name);
+                if (strlen(room_name) == 0 || strncmp(room_name, "/criar", 6) == 0) {
+                    send_message(client->socket, "Você digitou um nome inválido. Tente novamente.\n");
+                    close(client->socket);
+                    free(client);
+                    return;
+                } else {
+                    send_message(client->socket, "Insira o limite da sala:\n");
+                    char limit_str[10];
+                    read(client->socket, limit_str, sizeof(limit_str));
+                    int limit = atoi(limit_str);
+                    room = create_room(num_rooms + 1, room_name, limit);
+                    if (room != NULL) {
+                        room->clients[room->num_clients++] = client;
+                        send_message(client->socket, "Você criou uma nova sala.\n");
+                    } else {
+                        send_message(client->socket, "Não foi possível criar a sala.\n");
+                        close(client->socket);
+                        free(client);
+                        return;
+                    }
+                }
+            } else {
+                room = find_room_by_name(room_name);
             }
-            room = find_room_by_name(room_name);
         }
         if (room->num_clients < room->limit) {
             room->clients[room->num_clients++] = client;

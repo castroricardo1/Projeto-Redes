@@ -55,12 +55,15 @@ Room* find_room_by_id(int room_id) {
 
 Room* find_room_by_name(const char* room_name) {
     for (int i = 0; i < num_rooms; i++) {
-        if (strcmp(rooms[i]->name, room_name) == 0) {
+        // Verifica se o nome da sala atual é igual ao nome fornecido,
+        // ignorando espaços em branco no início e no final
+        if (strncmp(rooms[i]->name, room_name, strlen(rooms[i]->name)) == 0) {
             return rooms[i];
         }
     }
     return NULL;
 }
+
 
 void strtrim(char* str) {
     int start = 0, end = strlen(str) - 1;
@@ -135,6 +138,35 @@ void handle_client_message(Client* client, const char* message) {
         } else {
             send_message(client->socket, "Você não está em nenhuma sala.\n");
         }
+
+        // Limpa o buffer de entrada
+        char discard_buffer[1000];
+        read(client->socket, discard_buffer, sizeof(discard_buffer));
+
+        char peek_buffer[1];
+        int peek_result = recv(client->socket, peek_buffer, sizeof(peek_buffer), MSG_PEEK);
+        if (peek_result <= 0) {
+        // A conexão do cliente foi fechada, então é hora de desconectá-lo
+
+        // Fecha o socket do cliente
+        close(client->socket);
+
+        // Remove o descritor de arquivo do conjunto
+        FD_CLR(client->socket, &read_fds);
+
+        // Atualiza o valor máximo do descritor de arquivo
+        if (client->socket == max_sd) {
+            while (FD_ISSET(max_sd, &read_fds) == 0) {
+                max_sd--;
+            }
+        }
+
+                    free(client);
+
+            printf("Cliente desconectado\n");
+            return;
+        }
+
     } else if (strncmp(message, "/trocar_sala", 12) == 0) {
         if (current_room == NULL) {
             int room_id = atoi(message + 13);
@@ -159,6 +191,10 @@ void handle_client_message(Client* client, const char* message) {
         } else {
             send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
         }
+
+        // Limpa o buffer de entrada
+        char discard_buffer[1000];
+        read(client->socket, discard_buffer, sizeof(discard_buffer));
     } else if (strncmp(message, "/criar", 6) == 0) {
         if (current_room == NULL) {
             send_message(client->socket, "Digite o nome da nova sala ou (/cancelar para cancelar):\n");
@@ -189,6 +225,10 @@ void handle_client_message(Client* client, const char* message) {
         } else {
             send_message(client->socket, "Você já está em uma sala. Saia primeiro usando o comando /sair.\n");
         }
+
+        // Limpa o buffer de entrada
+        char discard_buffer[1000];
+        read(client->socket, discard_buffer, sizeof(discard_buffer));
     } else {
         if (current_room != NULL) {
             char formatted_message[1100];
@@ -204,6 +244,7 @@ void handle_client_message(Client* client, const char* message) {
         }
     }
 }
+
 
 void handle_new_connection(int server_socket) {
     int client_socket;
